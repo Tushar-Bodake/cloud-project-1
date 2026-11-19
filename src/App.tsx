@@ -259,7 +259,6 @@ function SecureFilesPage({ shared = false, title = 'My Files' }: { shared?: bool
 
   useEffect(() => {
     let active = true
-    setLoading(true)
     const load = shared ? listSharedFiles() : listOwnedFiles()
     void load.then(records => { if (active) setFiles(records) })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Unable to load files') })

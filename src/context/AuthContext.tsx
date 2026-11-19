@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => onAuthStateChanged(auth, currentUser => {
     setUser(currentUser)
-    setKeyPair(null)
+    if (!currentUser) setKeyPair(null)
     setLoading(false)
   }), [])
 

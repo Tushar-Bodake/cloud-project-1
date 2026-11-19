@@ -13,15 +13,23 @@ SecureCloud is a privacy-focused encrypted cloud file storage and sharing platfo
 
 The encryption boundary is the browser: files are split into 4 MB blocks, AES-GCM encrypts each block with a random nonce and authenticated block metadata, and Firebase receives only encrypted blocks and manifests.
 
-## Phase 1 status
+## Implemented
 
-This implementation includes the production UI shell:
+The application includes:
 
 - Responsive dashboard, sidebar, top navigation, file views, search, view toggles, starring, and upload dialog
 - Login and registration screens
 - Dashboard statistics and storage visualization
 - Shared, recent, starred, trash, activity, and settings routes
-- Firebase, Firestore, Storage, and emulator configuration placeholders
+- Firebase Emulator support
+- Email/password registration, login, logout, verification, and password reset
+- Browser-generated RSA-2048 key pairs protected with scrypt
+- AES-256-GCM file-block encryption with random 12-byte nonce values
+- SHA-256 block and whole-file verification
+- RSA-OAEP DEK wrapping
+- Encrypted Firebase Storage uploads and integrity-checked downloads
+- Firestore file metadata and sharing permissions
+- Secure sharing and revocation
 
 Firebase authentication and cryptography are implemented in later phases rather than presented as simulated production behavior.
 
