@@ -4,7 +4,7 @@ service firebase.storage {
     match /users/{uid}/files/{fileId}/{allPaths=**} {
       allow read: if request.auth != null &&
         (request.auth.uid == uid ||
-         firestore.exists(/databases/(default)/documents/fileAccess/$(request.auth.uid)_$(fileId)));
+         firestore.exists(/databases/(default)/documents/files/$(fileId)/fileAccess/$(request.auth.uid)));
       allow create, update: if request.auth != null && request.auth.uid == uid &&
         request.resource.size < 5 * 1024 * 1024 * 1024;
       allow delete: if request.auth != null && request.auth.uid == uid;

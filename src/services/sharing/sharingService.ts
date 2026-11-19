@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '../firebase/firebase'
 import { publicKeyFromBase64, unwrapDek, wrapDek } from '../encryption/crypto'
 
@@ -11,18 +11,17 @@ export async function shareFile(fileId: string, ownerPrivateKey: CryptoKey, reci
 
   const recipient = recipientSnapshot.docs[0].data()
   if (recipient.uid === user.uid) throw new Error('You cannot share a file with yourself')
-  const accessId = `${recipient.uid}_${fileId}`
-  const existing = await getDocs(query(collection(db, 'fileAccess'), where('fileId', '==', fileId), where('recipientId', '==', recipient.uid)))
+  const existing = await getDocs(query(collection(db, 'files', fileId, 'fileAccess'), where('recipientId', '==', recipient.uid)))
   if (!existing.empty && existing.docs[0].data().status === 'active') throw new Error('This file is already shared with that user')
 
-  const ownerAccess = await getDocs(query(collection(db, 'fileAccess'), where('fileId', '==', fileId), where('recipientId', '==', user.uid), where('status', '==', 'active')))
-  if (ownerAccess.empty) throw new Error('You do not have active access to share this file')
-  const ownerWrappedDek = ownerAccess.docs[0].data().wrappedDEK as string
+  const ownerAccess = await getDoc(doc(db, 'files', fileId, 'fileAccess', user.uid))
+  if (!ownerAccess.exists()) throw new Error('You do not have active access to share this file')
+  const ownerWrappedDek = ownerAccess.data().wrappedDEK as string
   const dek = await unwrapDek(ownerWrappedDek, ownerPrivateKey)
   const recipientPublicKey = await publicKeyFromBase64(recipient.publicKey)
   const wrappedForRecipient = await wrapDek(dek, recipientPublicKey)
 
-  await setDoc(doc(db, 'fileAccess', accessId), {
+  await setDoc(doc(db, 'files', fileId, 'fileAccess', recipient.uid), {
     fileId,
     ownerId: user.uid,
     recipientId: recipient.uid,
@@ -43,7 +42,7 @@ export async function shareFile(fileId: string, ownerPrivateKey: CryptoKey, reci
 export async function revokeFileAccess(fileId: string, recipientId: string) {
   const user = auth.currentUser
   if (!user) throw new Error('Sign in required')
-  await updateDoc(doc(db, 'fileAccess', `${recipientId}_${fileId}`), {
+  await updateDoc(doc(db, 'files', fileId, 'fileAccess', recipientId), {
     status: 'revoked',
     revokedAt: serverTimestamp(),
   })

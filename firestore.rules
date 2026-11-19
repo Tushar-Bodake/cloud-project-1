@@ -8,18 +8,17 @@ service cloud.firestore {
     match /files/{fileId} {
       allow read: if request.auth != null &&
         (resource.data.ownerId == request.auth.uid ||
-         exists(/databases/$(database)/documents/fileAccess/$(request.auth.uid)_$(fileId)));
+         exists(/databases/$(database)/documents/files/$(fileId)/fileAccess/$(request.auth.uid)));
       allow create: if request.auth != null && request.resource.data.ownerId == request.auth.uid;
       allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
-    }
-    match /fileAccess/{accessId} {
-      allow read: if request.auth != null &&
-        (resource.data.ownerId == request.auth.uid || resource.data.recipientId == request.auth.uid);
-      allow create: if request.auth != null &&
-        (request.resource.data.ownerId == request.auth.uid ||
-         request.resource.data.recipientId == request.auth.uid);
-      allow update: if request.auth != null && resource.data.ownerId == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      match /fileAccess/{recipientId} {
+        allow read: if request.auth != null &&
+          (resource.data.ownerId == request.auth.uid || recipientId == request.auth.uid);
+        allow create: if request.auth != null &&
+          (request.resource.data.ownerId == request.auth.uid ||
+           recipientId == request.auth.uid);
+        allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+      }
     }
     match /activityLogs/{activityId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;

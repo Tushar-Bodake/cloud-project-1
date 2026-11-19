@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       createdAt: serverTimestamp(),
       storageUsed: 0,
     })
+    setKeyPair(pair)
   }
 
   const clearKeys = async () => setKeyPair(null)

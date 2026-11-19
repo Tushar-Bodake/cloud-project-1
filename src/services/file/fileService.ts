@@ -1,4 +1,4 @@
-import { doc, getDoc, getDocs, collection, query, where, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, getDocs, collection, collectionGroup, query, where, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { getBytes, ref, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../firebase/firebase'
 import { BLOCK_SIZE, encryptBlock, sha256Hex, wrapDek, unwrapDek, decryptBlock } from '../encryption/crypto'
@@ -88,7 +88,7 @@ export async function uploadEncryptedFile(file: File, ownerKey: CryptoKey): Prom
   }
 
   await setDoc(doc(db, 'files', fileId), { ...record, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
-  await setDoc(doc(db, 'fileAccess', `${user.uid}_${fileId}`), {
+  await setDoc(doc(db, 'files', fileId, 'fileAccess', user.uid), {
     fileId,
     ownerId: user.uid,
     recipientId: user.uid,
@@ -117,7 +117,7 @@ export async function listOwnedFiles(): Promise<SecureFileRecord[]> {
 export async function listSharedFiles(): Promise<SecureFileRecord[]> {
   const user = auth.currentUser
   if (!user) return []
-  const accessSnapshot = await getDocs(query(collection(db, 'fileAccess'), where('recipientId', '==', user.uid), where('status', '==', 'active')))
+  const accessSnapshot = await getDocs(query(collectionGroup(db, 'fileAccess'), where('recipientId', '==', user.uid), where('status', '==', 'active')))
   const records: SecureFileRecord[] = []
   for (const access of accessSnapshot.docs) {
     if (access.data().permission === 'owner') continue
@@ -130,7 +130,7 @@ export async function listSharedFiles(): Promise<SecureFileRecord[]> {
 export async function downloadEncryptedFile(file: SecureFileRecord, privateKey: CryptoKey) {
   const user = auth.currentUser
   if (!user) throw new Error('Sign in required')
-  const access = await getDoc(doc(db, 'fileAccess', `${user.uid}_${file.fileId}`))
+  const access = await getDoc(doc(db, 'files', file.fileId, 'fileAccess', user.uid))
   if (!access.exists() || access.data().status !== 'active') throw new Error('You do not have active access to this file')
 
   const manifestBytes = new Uint8Array(await getBytes(ref(storage, file.manifestPath)))

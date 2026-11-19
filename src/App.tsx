@@ -100,7 +100,7 @@ function Topbar({ onMenu, onUpload }: { onMenu: () => void; onUpload: () => void
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#69748a]" size={17} />
         <input aria-label="Search files" className="h-10 w-full rounded-xl border border-white/[0.06] bg-[#111625] pl-10 pr-4 text-sm text-white outline-none placeholder:text-[#68738a] focus:border-[#6c63ff]/60" placeholder="Search files and folders..." />
       </div>
-      <button onClick={onUpload} className="ml-auto flex h-10 items-center gap-2 rounded-xl bg-[#6c63ff] px-3.5 text-sm font-medium text-white shadow-[0_8px_24px_rgba(108,99,255,.22)] hover:bg-[#7a72ff]">
+      <button aria-label="Upload" onClick={onUpload} className="ml-auto flex h-10 items-center gap-2 rounded-xl bg-[#6c63ff] px-3.5 text-sm font-medium text-white shadow-[0_8px_24px_rgba(108,99,255,.22)] hover:bg-[#7a72ff]">
         <Upload size={17} /><span className="hidden sm:inline">Upload</span>
       </button>
       <button aria-label="Notifications" className="grid h-10 w-10 place-items-center rounded-xl border border-white/[0.06] bg-[#111625] text-[#9aa3b6]"><Bell size={17} /></button>
@@ -247,7 +247,6 @@ function SecureFilesPage({ shared = false, title = 'My Files' }: { shared?: bool
   const [query, setQuery] = useState('')
 
   const reload = async () => {
-    setLoading(true)
     setError('')
     try {
       setFiles(shared ? await listSharedFiles() : await listOwnedFiles())
@@ -258,7 +257,15 @@ function SecureFilesPage({ shared = false, title = 'My Files' }: { shared?: bool
     }
   }
 
-  useEffect(() => { void reload() }, [shared])
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    const load = shared ? listSharedFiles() : listOwnedFiles()
+    void load.then(records => { if (active) setFiles(records) })
+      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Unable to load files') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [shared])
 
   const download = async (file: SecureFileRecord) => {
     if (!keyPair?.privateKey) { setError('Unlock your private key by signing in again'); return }
