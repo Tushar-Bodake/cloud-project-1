@@ -6,6 +6,11 @@ import {
   FileArchive, Video, ShieldCheck, Activity
 } from 'lucide-react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth'
+import { auth } from './services/firebase/firebase'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { downloadEncryptedFile, listOwnedFiles, listSharedFiles, moveToTrash, toggleStar, uploadEncryptedFile, type SecureFileRecord } from './services/file/fileService'
+import { revokeFileAccess, shareFile } from './services/sharing/sharingService'
 
 type CloudFile = {
   id: number
@@ -87,6 +92,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
 function Topbar({ onMenu, onUpload }: { onMenu: () => void; onUpload: () => void }) {
   const [profile, setProfile] = useState(false)
   const navigate = useNavigate()
+  const { logout } = useAuth()
   return (
     <header className="sticky top-0 z-30 flex h-[72px] items-center gap-3 border-b border-white/[0.06] bg-[#090d18]/95 px-4 backdrop-blur-xl md:px-7">
       <button aria-label="Open menu" className="grid h-10 w-10 place-items-center rounded-xl text-[#9aa3b6] md:hidden" onClick={onMenu}><Menu size={20} /></button>
@@ -106,7 +112,7 @@ function Topbar({ onMenu, onUpload }: { onMenu: () => void; onUpload: () => void
         {profile && (
           <div className="absolute right-0 top-12 w-48 rounded-xl border border-white/[0.08] bg-[#151a28] p-2 shadow-2xl">
             <button onClick={() => { setProfile(false); navigate('/settings') }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#b4bccb] hover:bg-white/[0.04]"><Settings size={15} />Settings</button>
-            <button onClick={() => navigate('/login')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#fb7185] hover:bg-white/[0.04]"><LogOut size={15} />Sign out</button>
+            <button onClick={async () => { await logout(); navigate('/login') }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#fb7185] hover:bg-white/[0.04]"><LogOut size={15} />Sign out</button>
           </div>
         )}
       </div>
