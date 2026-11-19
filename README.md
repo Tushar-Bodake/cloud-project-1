@@ -35,6 +35,14 @@ Firebase authentication and cryptography are implemented in later phases rather 
 
 ## Setup
 
+### Windows quick start
+
+Double-click `run-securecloud.bat`. It installs dependencies if needed, starts the Firebase emulators and web app, then opens `http://127.0.0.1:5173/`. Keep the emulator and web app terminal windows open while using SecureCloud.
+
+To open only the Firebase Emulator Suite, double-click `open-firebase-emulator-suite.bat`. It starts the emulators if needed and opens `http://127.0.0.1:4000/`.
+
+### Manual setup
+
 1. Install dependencies:
 
 ```bash
