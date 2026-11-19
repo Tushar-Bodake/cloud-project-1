@@ -9,8 +9,9 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 're
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from './services/firebase/firebase'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { downloadEncryptedFile, listOwnedFiles, listSharedFiles, moveToTrash, toggleStar, uploadEncryptedFile, type SecureFileRecord } from './services/file/fileService'
+import { downloadEncryptedFile, listOwnedFiles, listRecentActivity, listSharedFiles, moveToTrash, toggleStar as toggleStarFile, uploadEncryptedFile, type ActivityRecord, type SecureFileRecord } from './services/file/fileService'
 import { shareFile } from './services/sharing/sharingService'
+import { subscribeToDataChanges } from './services/events/dataChange'
 
 type CloudFile = {
   id: number
@@ -131,18 +132,30 @@ function Dashboard() {
   const [ownedFiles, setOwnedFiles] = useState<SecureFileRecord[]>([])
   const [sharedFiles, setSharedFiles] = useState<SecureFileRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     let active = true
-    Promise.all([listOwnedFiles(), listSharedFiles()])
-      .then(([owned, shared]) => {
-        if (active) {
-          setOwnedFiles(owned)
-          setSharedFiles(shared)
-        }
-      })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
+    const refresh = async () => {
+      const [ownedResult, sharedResult] = await Promise.allSettled([listOwnedFiles(), listSharedFiles()])
+      if (!active) return
+      const errors: string[] = []
+      if (ownedResult.status === 'fulfilled') {
+        setOwnedFiles(ownedResult.value)
+      } else {
+        errors.push(ownedResult.reason instanceof Error ? ownedResult.reason.message : 'Unable to load your files')
+      }
+      if (sharedResult.status === 'fulfilled') {
+        setSharedFiles(sharedResult.value)
+      } else {
+        errors.push(sharedResult.reason instanceof Error ? sharedResult.reason.message : 'Unable to load shared files')
+      }
+      setLoadError(errors.join(' · '))
+      setLoading(false)
+    }
+    void refresh()
+    const unsubscribe = subscribeToDataChanges(() => { void refresh() })
+    return () => { active = false; unsubscribe() }
   }, [])
 
   const storageBytes = ownedFiles.reduce((total, file) => total + file.originalFileSize, 0)
@@ -152,7 +165,7 @@ function Dashboard() {
   const firstName = displayName.split(/\s+/)[0] || 'User'
   const recent = ownedFiles.slice(0, 4)
   const toggleStar = async (fileId: string, starred: boolean) => {
-    await toggleStar(fileId, starred)
+    await toggleStarFile(fileId, starred)
     setOwnedFiles(current => current.map(file => file.fileId === fileId ? { ...file, starred } : file))
   }
   const fileType = (file: SecureFileRecord): CloudFile['type'] => {
@@ -173,6 +186,7 @@ function Dashboard() {
         <StatCard icon={Share2} label="Shared files" value={loading ? '—' : String(sharedFiles.length)} detail="with you" color="#c084fc" />
         <StatCard icon={ShieldCheck} label="Security" value="Encrypted" detail="All files" color="#34d399" />
       </section>
+      {loadError && <p className="mt-4 rounded-xl border border-white/[0.07] bg-[#111625] px-4 py-3 text-sm text-[#b9c1d1]" role="alert">{loadError}</p>}
       <section className="mt-7">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-[#e9eef8]">Recent files</h2>
@@ -227,6 +241,73 @@ function SimplePage({ title }: { title: string }) {
   return <main className="mx-auto max-w-[1180px] p-4 md:p-7"><h1 className="mb-5 text-2xl font-semibold">{title}</h1><div className="grid min-h-[420px] place-items-center rounded-2xl border border-dashed border-white/[0.10] bg-[#111625]/50"><div className="text-center"><ShieldCheck className="mx-auto mb-3 text-[#6c63ff]" size={32} /><p className="text-sm text-[#9aa4b7]">{title} will be connected to Firebase in the next phase.</p></div></div></main>
 }
 
+function ActivityPage() {
+  const [records, setRecords] = useState<ActivityRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    const refresh = async () => {
+      try {
+        const activity = await listRecentActivity()
+        if (active) {
+          setRecords(activity)
+          setError('')
+        }
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : 'Unable to load activity')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void refresh()
+    const unsubscribe = subscribeToDataChanges(() => { void refresh() })
+    return () => { active = false; unsubscribe() }
+  }, [])
+
+  const activityDescription = (record: ActivityRecord) => {
+    const fileName = typeof record.details?.fileName === 'string' ? record.details.fileName : 'file'
+    const recipient = typeof record.details?.recipientEmail === 'string' ? record.details.recipientEmail : 'a user'
+    switch (record.activityType) {
+      case 'UPLOAD': return `Uploaded ${fileName}`
+      case 'DOWNLOAD': return `Downloaded ${fileName}`
+      case 'SHARE': return `Shared ${fileName} with ${recipient}`
+      case 'REVOKE': return `Revoked access to ${fileName}`
+      case 'STAR': return `Starred ${fileName}`
+      case 'UNSTAR': return `Unstarred ${fileName}`
+      case 'TRASH': return `Moved ${fileName} to trash`
+      case 'RESTORE': return `Restored ${fileName}`
+      default: return `${record.activityType} — ${fileName}`
+    }
+  }
+
+  const activityTime = (record: ActivityRecord) => {
+    const timestamp = record.timestamp
+    const date = timestamp instanceof Date ? timestamp :
+      timestamp && typeof timestamp.toDate === 'function' ? timestamp.toDate() : null
+    return date ? date.toLocaleString() : 'Just now'
+  }
+
+  return (
+    <main className="mx-auto max-w-[1180px] p-4 md:p-7">
+      <h1 className="mb-5 text-2xl font-semibold">Activity Logs</h1>
+      {error && <p className="mb-4 rounded-xl border border-white/[0.07] bg-[#111625] px-4 py-3 text-sm text-[#b9c1d1]" role="alert">{error}</p>}
+      {loading ? <div className="h-40 animate-pulse rounded-2xl border border-white/[0.06] bg-[#111625]" /> :
+        records.length === 0 ? <div className="grid min-h-[300px] place-items-center rounded-2xl border border-dashed border-white/[0.10] text-sm text-[#7f899d]">No activity yet</div> :
+          <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#111625]">
+            {records.map(record => (
+              <div key={record.activityId} className="flex items-center gap-3 border-b border-white/[0.05] px-4 py-4 last:border-0">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#6c63ff]/10 text-[#8b83ff]"><Activity size={17} /></span>
+                <p className="min-w-0 flex-1 truncate text-sm text-[#dfe5f1]">{activityDescription(record)}</p>
+                <time className="shrink-0 text-xs text-[#737f95]">{activityTime(record)}</time>
+              </div>
+            ))}
+          </div>}
+    </main>
+  )
+}
+
 function UploadModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (file: File) => void }) {
   const [dragging, setDragging] = useState(false)
   if (!open) return null
@@ -269,14 +350,19 @@ function SecureFilesPage({ shared = false, starred = false, recent = false, titl
 
   useEffect(() => {
     let active = true
-    const load = (async () => {
-      const records = shared ? await listSharedFiles() : await listOwnedFiles()
-      return starred ? records.filter(file => file.starred) : recent ? records.slice(0, 10) : records
-    })()
-    void load.then(records => { if (active) setFiles(records) })
-      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Unable to load files') })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
+    const load = async () => {
+      try {
+        const records = shared ? await listSharedFiles() : await listOwnedFiles()
+        if (active) setFiles(starred ? records.filter(file => file.starred) : recent ? records.slice(0, 10) : records)
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : 'Unable to load files')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void load()
+    const unsubscribe = subscribeToDataChanges(() => { void load() })
+    return () => { active = false; unsubscribe() }
   }, [shared, starred, recent])
 
   const download = async (file: SecureFileRecord) => {
@@ -310,7 +396,7 @@ function SecureFilesPage({ shared = false, starred = false, recent = false, titl
           {filtered.map(file => (
             <div key={file.fileId} className="grid grid-cols-[minmax(180px,1fr)_100px_180px] items-center gap-3 border-b border-white/[0.05] px-4 py-3 last:border-0">
               <div className="min-w-0"><p className="truncate text-sm text-[#dfe5f1]">{file.encryptedFileName}</p><p className="mt-1 text-xs text-[#737f95]">{(file.originalFileSize / 1024 / 1024).toFixed(2)} MB · {file.mimeType}</p></div>
-              <button onClick={() => void toggleStar(file.fileId, !file.starred)} className="text-[#8b83ff]"><Star size={16} fill={file.starred ? 'currentColor' : 'none'} /></button>
+              <button onClick={() => void toggleStarFile(file.fileId, !file.starred)} className="text-[#8b83ff]"><Star size={16} fill={file.starred ? 'currentColor' : 'none'} /></button>
               <div className="flex justify-end gap-2">
                 <button aria-label={`Download ${file.encryptedFileName}`} onClick={() => void download(file)} className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.06] text-[#9aa4b7]"><Download size={16} /></button>
                 {!shared && <button aria-label={`Share ${file.encryptedFileName}`} onClick={() => void share(file)} className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.06] text-[#9aa4b7]"><Share2 size={16} /></button>}
@@ -418,7 +504,7 @@ function AppShell() {
           <Route path="/recent" element={<SecureFilesPage recent title="Recent Files" />} />
           <Route path="/starred" element={<SecureFilesPage starred title="Starred" />} />
           <Route path="/trash" element={<SimplePage title="Trash" />} />
-          <Route path="/activity" element={<SimplePage title="Activity Logs" />} />
+          <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SimplePage title="Settings" />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

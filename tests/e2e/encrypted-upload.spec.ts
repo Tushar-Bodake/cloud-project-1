@@ -18,6 +18,10 @@ test('uploaded encrypted file metadata persists in the owner file list', async (
     buffer: Buffer.from('Client-side encryption persistence check'),
   })
   await expect(page.getByRole('heading', { name: 'Upload files' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Recent files' })).toBeVisible()
+  await expect(page.getByText(fileName)).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('link', { name: 'Activity Logs' }).click()
+  await expect(page.getByText(`Uploaded ${fileName}`)).toBeVisible({ timeout: 30_000 })
   await page.getByRole('link', { name: 'My Files' }).click()
   await expect(page.getByText(fileName)).toBeVisible({ timeout: 30_000 })
   const downloadPromise = page.waitForEvent('download')

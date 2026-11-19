@@ -27,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => onAuthStateChanged(auth, currentUser => {
     setUser(currentUser)
+    setLoading(false)
     if (!currentUser) {
       setKeyPair(null)
       setDisplayName('')
@@ -35,7 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void getDoc(doc(db, 'users', currentUser.uid)).then(snapshot => {
       setDisplayName(snapshot.exists() ? String(snapshot.data().displayName || currentUser.displayName || 'User') : currentUser.displayName || 'User')
     })
-    setLoading(false)
   }), [])
 
   const unlockKeys = async (password: string) => {

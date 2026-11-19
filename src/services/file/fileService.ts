@@ -2,6 +2,7 @@ import { doc, getDoc, getDocs, collection, collectionGroup, query, where, setDoc
 import { getBytes, ref, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../firebase/firebase'
 import { BLOCK_SIZE, encryptBlock, sha256Hex, wrapDek, unwrapDek, decryptBlock } from '../encryption/crypto'
+import { notifyDataChanged } from '../events/dataChange'
 
 export type SecureFileManifest = {
   fileId: string
@@ -104,6 +105,7 @@ export async function uploadEncryptedFile(file: File, ownerKey: CryptoKey): Prom
     timestamp: serverTimestamp(),
     details: { fileName: file.name, size: file.size },
   })
+  notifyDataChanged()
   return record
 }
 
@@ -111,7 +113,18 @@ export async function listOwnedFiles(): Promise<SecureFileRecord[]> {
   const user = auth.currentUser
   if (!user) return []
   const snapshot = await getDocs(query(collection(db, 'files'), where('ownerId', '==', user.uid)))
-  return snapshot.docs.map(item => item.data() as SecureFileRecord).filter(file => !file.trashed)
+  return snapshot.docs
+    .map(item => item.data() as SecureFileRecord)
+    .filter(file => !file.trashed)
+    .sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt))
+}
+
+function timestampMillis(timestamp: unknown) {
+  if (timestamp instanceof Date) return timestamp.getTime()
+  if (timestamp && typeof timestamp === 'object' && 'toMillis' in timestamp && typeof timestamp.toMillis === 'function') {
+    return timestamp.toMillis()
+  }
+  return 0
 }
 
 export async function listSharedFiles(): Promise<SecureFileRecord[]> {
@@ -125,6 +138,30 @@ export async function listSharedFiles(): Promise<SecureFileRecord[]> {
     if (file.exists() && !file.data().trashed) records.push(file.data() as SecureFileRecord)
   }
   return records
+}
+
+export type ActivityRecord = {
+  activityId: string
+  userId: string
+  fileId: string
+  activityType: string
+  timestamp?: { toDate?: () => Date } | Date
+  details?: Record<string, unknown>
+}
+
+export async function listRecentActivity(): Promise<ActivityRecord[]> {
+  const user = auth.currentUser
+  if (!user) return []
+  const snapshot = await getDocs(query(collection(db, 'activityLogs'), where('userId', '==', user.uid)))
+  return snapshot.docs
+    .map(item => ({ activityId: item.id, ...item.data() } as ActivityRecord))
+    .sort((a, b) => activityDate(b.timestamp).getTime() - activityDate(a.timestamp).getTime())
+}
+
+function activityDate(timestamp: ActivityRecord['timestamp']) {
+  if (timestamp instanceof Date) return timestamp
+  if (timestamp && typeof timestamp.toDate === 'function') return timestamp.toDate()
+  return new Date(0)
 }
 
 export async function downloadEncryptedFile(file: SecureFileRecord, privateKey: CryptoKey) {
@@ -169,18 +206,52 @@ export async function downloadEncryptedFile(file: SecureFileRecord, privateKey: 
     fileId: file.fileId,
     activityType: 'DOWNLOAD',
     timestamp: serverTimestamp(),
-    details: { integrityVerified: true },
+    details: { fileName: manifest.originalFileName, integrityVerified: true },
   })
+  notifyDataChanged()
 }
 
 export async function toggleStar(fileId: string, starred: boolean) {
   await updateDoc(doc(db, 'files', fileId), { starred, updatedAt: serverTimestamp() })
+  const user = auth.currentUser
+  if (user) {
+    await setDoc(doc(db, 'activityLogs', crypto.randomUUID()), {
+      userId: user.uid,
+      fileId,
+      activityType: starred ? 'STAR' : 'UNSTAR',
+      timestamp: serverTimestamp(),
+      details: {},
+    })
+  }
+  notifyDataChanged()
 }
 
 export async function moveToTrash(fileId: string) {
   await updateDoc(doc(db, 'files', fileId), { trashed: true, updatedAt: serverTimestamp() })
+  const user = auth.currentUser
+  if (user) {
+    await setDoc(doc(db, 'activityLogs', crypto.randomUUID()), {
+      userId: user.uid,
+      fileId,
+      activityType: 'TRASH',
+      timestamp: serverTimestamp(),
+      details: {},
+    })
+  }
+  notifyDataChanged()
 }
 
 export async function restoreFile(fileId: string) {
   await updateDoc(doc(db, 'files', fileId), { trashed: false, updatedAt: serverTimestamp() })
+  const user = auth.currentUser
+  if (user) {
+    await setDoc(doc(db, 'activityLogs', crypto.randomUUID()), {
+      userId: user.uid,
+      fileId,
+      activityType: 'RESTORE',
+      timestamp: serverTimestamp(),
+      details: {},
+    })
+  }
+  notifyDataChanged()
 }

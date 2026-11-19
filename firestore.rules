@@ -13,7 +13,8 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
       match /fileAccess/{recipientId} {
         allow read: if request.auth != null &&
-          (resource.data.ownerId == request.auth.uid || recipientId == request.auth.uid);
+          (recipientId == request.auth.uid ||
+           get(/databases/$(database)/documents/files/$(fileId)).data.ownerId == request.auth.uid);
         allow create: if request.auth != null &&
           (request.resource.data.ownerId == request.auth.uid ||
            recipientId == request.auth.uid);
@@ -24,6 +25,10 @@ service cloud.firestore {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
+    }
+    match /{path=**}/fileAccess/{accessId} {
+      allow read: if request.auth != null &&
+        resource.data.recipientId == request.auth.uid;
     }
     match /{document=**} {
       allow read, write: if false;
