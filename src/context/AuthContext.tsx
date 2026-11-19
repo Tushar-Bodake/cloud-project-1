@@ -10,6 +10,7 @@ type AuthContextValue = {
   user: User | null
   loading: boolean
   keyPair: KeyMaterial | null
+  displayName: string
   unlockKeys: (password: string) => Promise<void>
   clearKeys: () => Promise<void>
   createUserProfile: (displayName: string, password: string) => Promise<void>
@@ -22,10 +23,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [keyPair, setKeyPair] = useState<KeyMaterial | null>(null)
+  const [displayName, setDisplayName] = useState('')
 
   useEffect(() => onAuthStateChanged(auth, currentUser => {
     setUser(currentUser)
-    if (!currentUser) setKeyPair(null)
+    if (!currentUser) {
+      setKeyPair(null)
+      setDisplayName('')
+      return
+    }
+    void getDoc(doc(db, 'users', currentUser.uid)).then(snapshot => {
+      setDisplayName(snapshot.exists() ? String(snapshot.data().displayName || currentUser.displayName || 'User') : currentUser.displayName || 'User')
+    })
     setLoading(false)
   }), [])
 
@@ -56,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       storageUsed: 0,
     })
     setKeyPair(pair)
+    setDisplayName(displayName)
   }
 
   const clearKeys = async () => setKeyPair(null)
@@ -64,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth)
   }
 
-  const value = useMemo(() => ({ user, loading, keyPair, unlockKeys, clearKeys, createUserProfile, logout }), [user, loading, keyPair])
+  const value = useMemo(() => ({ user, loading, keyPair, displayName, unlockKeys, clearKeys, createUserProfile, logout }), [user, loading, keyPair, displayName])
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
