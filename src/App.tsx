@@ -1,16 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bell, ChevronDown, Clock3, Cloud, FileText, Folder, Grid2X2,
   HardDrive, Home, Image, List, LogOut, Menu, MoreHorizontal,
   Search, Settings, Share2, Star, Trash2, Upload, Users, X,
-  FileArchive, Video, ShieldCheck, Activity
+  FileArchive, Video, ShieldCheck, Activity, Download
 } from 'lucide-react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from './services/firebase/firebase'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { downloadEncryptedFile, listOwnedFiles, listSharedFiles, moveToTrash, toggleStar, uploadEncryptedFile, type SecureFileRecord } from './services/file/fileService'
-import { revokeFileAccess, shareFile } from './services/sharing/sharingService'
+import { shareFile } from './services/sharing/sharingService'
 
 type CloudFile = {
   id: number
@@ -218,19 +218,12 @@ function SimplePage({ title }: { title: string }) {
   return <main className="mx-auto max-w-[1180px] p-4 md:p-7"><h1 className="mb-5 text-2xl font-semibold">{title}</h1><div className="grid min-h-[420px] place-items-center rounded-2xl border border-dashed border-white/[0.10] bg-[#111625]/50"><div className="text-center"><ShieldCheck className="mx-auto mb-3 text-[#6c63ff]" size={32} /><p className="text-sm text-[#9aa4b7]">{title} will be connected to Firebase in the next phase.</p></div></div></main>
 }
 
-function UploadModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (file: CloudFile) => void }) {
+function UploadModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (file: File) => void }) {
   const [dragging, setDragging] = useState(false)
   if (!open) return null
   const addFiles = (fileList: FileList | null) => {
     if (!fileList) return
-    Array.from(fileList).forEach((file, index) => {
-      const extension = file.name.split('.').pop()?.toLowerCase()
-      const type: CloudFile['type'] = ['jpg', 'jpeg', 'png', 'gif', 'svg'].includes(extension || '') ? 'Image'
-        : ['mp4', 'mov', 'webm'].includes(extension || '') ? 'Video'
-        : ['zip', 'rar', '7z'].includes(extension || '') ? 'Archive'
-        : ['pdf'].includes(extension || '') ? 'PDF' : 'Document'
-      onAdd({ id: Date.now() + index, name: file.name, type, size: `${(file.size / 1024 / 1024).toFixed(1)} MB`, modified: 'Just now' })
-    })
+    Array.from(fileList).forEach(file => onAdd(file))
     onClose()
   }
   return (
@@ -246,13 +239,110 @@ function UploadModal({ open, onClose, onAdd }: { open: boolean; onClose: () => v
   )
 }
 
+function SecureFilesPage({ shared = false, title = 'My Files' }: { shared?: boolean; title?: string }) {
+  const { keyPair } = useAuth()
+  const [files, setFiles] = useState<SecureFileRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+
+  const reload = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      setFiles(shared ? await listSharedFiles() : await listOwnedFiles())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load files')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void reload() }, [shared])
+
+  const download = async (file: SecureFileRecord) => {
+    if (!keyPair?.privateKey) { setError('Unlock your private key by signing in again'); return }
+    try { await downloadEncryptedFile(file, keyPair.privateKey) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Download failed') }
+  }
+
+  const share = async (file: SecureFileRecord) => {
+    if (!keyPair?.privateKey) { setError('Unlock your private key by signing in again'); return }
+    const email = window.prompt('Recipient email address')
+    if (!email) return
+    try {
+      await shareFile(file.fileId, keyPair.privateKey, email)
+      setError('File shared successfully')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to share file')
+    }
+  }
+
+  const trash = async (file: SecureFileRecord) => {
+    try { await moveToTrash(file.fileId); await reload() } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to move file to trash') }
+  }
+
+  const filtered = files.filter(file => file.encryptedFileName.toLowerCase().includes(query.toLowerCase()))
+  return (
+    <main className="mx-auto max-w-[1180px] p-4 md:p-7">
+      <div className="mb-5 flex items-center justify-between"><h1 className="text-2xl font-semibold">{title}</h1><input value={query} onChange={event => setQuery(event.target.value)} className="h-10 w-[230px] rounded-xl border border-white/[0.06] bg-[#111625] px-3 text-sm outline-none" placeholder="Search encrypted files" /></div>
+      {error && <p className="mb-3 rounded-xl border border-white/[0.07] bg-[#111625] px-4 py-3 text-sm text-[#b9c1d1]" role="alert">{error}</p>}
+      {loading ? <div className="h-40 animate-pulse rounded-2xl border border-white/[0.06] bg-[#111625]" /> : filtered.length === 0 ? <div className="grid min-h-[300px] place-items-center rounded-2xl border border-dashed border-white/[0.10] text-sm text-[#7f899d]">No encrypted files found</div> :
+        <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#111625]">
+          {filtered.map(file => (
+            <div key={file.fileId} className="grid grid-cols-[minmax(180px,1fr)_100px_180px] items-center gap-3 border-b border-white/[0.05] px-4 py-3 last:border-0">
+              <div className="min-w-0"><p className="truncate text-sm text-[#dfe5f1]">{file.encryptedFileName}</p><p className="mt-1 text-xs text-[#737f95]">{(file.originalFileSize / 1024 / 1024).toFixed(2)} MB · {file.mimeType}</p></div>
+              <button onClick={() => void toggleStar(file.fileId, !file.starred)} className="text-[#8b83ff]"><Star size={16} fill={file.starred ? 'currentColor' : 'none'} /></button>
+              <div className="flex justify-end gap-2">
+                <button aria-label={`Download ${file.encryptedFileName}`} onClick={() => void download(file)} className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.06] text-[#9aa4b7]"><Download size={16} /></button>
+                {!shared && <button aria-label={`Share ${file.encryptedFileName}`} onClick={() => void share(file)} className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.06] text-[#9aa4b7]"><Share2 size={16} /></button>}
+                {!shared && <button aria-label={`Trash ${file.encryptedFileName}`} onClick={() => void trash(file)} className="grid h-9 w-9 place-items-center rounded-lg border border-white/[0.06] text-[#fb7185]"><Trash2 size={16} /></button>}
+              </div>
+            </div>
+          ))}
+        </div>}
+    </main>
+  )
+}
+
 function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate()
+  const { createUserProfile, unlockKeys } = useAuth()
   const [busy, setBusy] = useState(false)
-  const submit = (event: React.FormEvent) => {
+  const [error, setError] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy(true)
-    window.setTimeout(() => { setBusy(false); navigate('/dashboard') }, 600)
+    setError('')
+    try {
+      if (mode === 'register') {
+        await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
+        await createUserProfile(displayName.trim(), password)
+        if (auth.currentUser) await sendEmailVerification(auth.currentUser)
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
+        await unlockKeys(password)
+      }
+      navigate('/dashboard')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Authentication failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const forgotPassword = async () => {
+    if (!email) {
+      setError('Enter your email address first')
+      return
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase())
+      setError('Password reset email sent')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to send reset email')
+    }
   }
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[#090d18] lg:grid-cols-[1fr_480px]">
@@ -265,10 +355,11 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           <div className="mb-8 lg:hidden"><Logo /></div>
           <h2 className="text-2xl font-semibold">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
           <p className="mt-2 text-sm text-[#818ca1]">{mode === 'login' ? 'Sign in to continue to your vault' : 'Start protecting your files today'}</p>
-          {mode === 'register' && <label className="mt-7 block"><span className="mb-2 block text-xs text-[#adb6c7]">Full name</span><input required className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#111625] px-3 text-sm outline-none focus:border-[#6c63ff]/70" placeholder="Alex Morgan" /></label>}
-          <label className="mt-5 block"><span className="mb-2 block text-xs text-[#adb6c7]">Email address</span><input required type="email" className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#111625] px-3 text-sm outline-none focus:border-[#6c63ff]/70" placeholder="alex@example.com" /></label>
-          <label className="mt-4 block"><span className="mb-2 block text-xs text-[#adb6c7]">Password</span><input required type="password" minLength={8} className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#111625] px-3 text-sm outline-none focus:border-[#6c63ff]/70" placeholder="••••••••" /></label>
-          {mode === 'login' && <div className="mt-3 text-right"><button type="button" className="text-xs text-[#8b83ff]">Forgot password?</button></div>}
+          {mode === 'register' && <label className="mt-7 block"><span className="mb-2 block text-xs text-[#adb6c7]">Full name</span><input value={displayName} onChange={event => setDisplayName(event.target.value)} required className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#111625] px-3 text-sm outline-none focus:border-[#6c63ff]/70" placeholder="Alex Morgan" /></label>}
+          <label className="mt-5 block"><span className="mb-2 block text-xs text-[#adb6c7]">Email address</span><input value={email} onChange={event => setEmail(event.target.value)} required type="email" className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#111625] px-3 text-sm outline-none focus:border-[#6c63ff]/70" placeholder="alex@example.com" /></label>
+          <label className="mt-4 block"><span className="mb-2 block text-xs text-[#adb6c7]">Password</span><input value={password} onChange={event => setPassword(event.target.value)} required type="password" minLength={8} className="h-11 w-full rounded-xl border border-white/[0.08] bg-[#111625] px-3 text-sm outline-none focus:border-[#6c63ff]/70" placeholder="••••••••" /></label>
+          {mode === 'login' && <div className="mt-3 text-right"><button type="button" onClick={forgotPassword} className="text-xs text-[#8b83ff]">Forgot password?</button></div>}
+          {error && <p className="mt-3 text-xs text-[#fb7185]" role="alert">{error}</p>}
           <button disabled={busy} className="mt-6 h-11 w-full rounded-xl bg-[#6c63ff] text-sm font-medium hover:bg-[#7a72ff] disabled:opacity-60">{busy ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
           <p className="mt-5 text-center text-sm text-[#7f899d]">{mode === 'login' ? 'New to SecureCloud?' : 'Already have an account?'} <button type="button" onClick={() => navigate(mode === 'login' ? '/register' : '/login')} className="text-[#9a95ff]">{mode === 'login' ? 'Create account' : 'Sign in'}</button></p>
         </form>
@@ -278,10 +369,25 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 }
 
 function AppShell() {
+  const { keyPair, user, loading } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [files, setFiles] = useState(seedFiles)
-  const addFile = (file: CloudFile) => setFiles(previous => [file, ...previous])
+  const [uploadError, setUploadError] = useState('')
+  const addFile = async (file: File) => {
+    if (!keyPair?.publicKey) {
+      setUploadError('Private-key profile is locked. Sign out and sign in again.')
+      return
+    }
+    try {
+      await uploadEncryptedFile(file, keyPair.publicKey)
+      setUploadError('')
+    } catch (cause) {
+      setUploadError(cause instanceof Error ? cause.message : 'Encrypted upload failed')
+    }
+  }
+  if (loading) return <div className="grid min-h-screen place-items-center bg-[#090d18] text-sm text-[#8d96aa]">Loading SecureCloud...</div>
+  if (!user) return <Navigate to="/login" replace />
   return (
     <div className="min-h-screen bg-[#090d18] text-[#e9eef8]">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -289,8 +395,8 @@ function AppShell() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard files={files} setFiles={setFiles} />} />
-          <Route path="/files" element={<FilesPage files={files} setFiles={setFiles} />} />
-          <Route path="/shared" element={<FilesPage files={files.filter(file => file.shared)} setFiles={setFiles} title="Shared With Me" />} />
+          <Route path="/files" element={<SecureFilesPage />} />
+          <Route path="/shared" element={<SecureFilesPage shared title="Shared With Me" />} />
           <Route path="/recent" element={<FilesPage files={files.slice(0, 4)} setFiles={setFiles} title="Recent Files" />} />
           <Route path="/starred" element={<FilesPage files={files.filter(file => file.starred)} setFiles={setFiles} title="Starred" />} />
           <Route path="/trash" element={<SimplePage title="Trash" />} />
@@ -299,6 +405,7 @@ function AppShell() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>
+      {uploadError && <div className="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-xl border border-[#fb7185]/20 bg-[#251822] px-4 py-3 text-sm text-[#fecdd3]" role="alert">{uploadError}</div>}
       <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} onAdd={addFile} />
     </div>
   )
@@ -306,12 +413,14 @@ function AppShell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<AuthPage mode="login" />} />
-        <Route path="/register" element={<AuthPage mode="register" />} />
-        <Route path="/*" element={<AppShell />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<AuthPage mode="login" />} />
+          <Route path="/register" element={<AuthPage mode="register" />} />
+          <Route path="/*" element={<AppShell />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }

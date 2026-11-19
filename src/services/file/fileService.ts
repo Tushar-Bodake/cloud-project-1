@@ -164,7 +164,6 @@ export async function downloadEncryptedFile(file: SecureFileRecord, privateKey: 
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(downloadUrl)
-  await updateDoc(doc(db, 'activityLogs', crypto.randomUUID()), {}).catch(() => undefined)
   await setDoc(doc(db, 'activityLogs', crypto.randomUUID()), {
     userId: user.uid,
     fileId: file.fileId,
