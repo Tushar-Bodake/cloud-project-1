@@ -1,32 +1,65 @@
-# React + TypeScript + Vite
+# SecureCloud
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+SecureCloud is a privacy-focused encrypted cloud file storage and sharing platform built with React, TypeScript, Vite, Tailwind CSS, Firebase, and Web Crypto.
 
-Currently, two official plugins are available:
+## Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, React Router, Lucide React
+- **Identity:** Firebase Authentication
+- **Metadata and permissions:** Cloud Firestore
+- **Encrypted objects:** Firebase Cloud Storage
+- **Cryptography:** Web Crypto AES-256-GCM and RSA-OAEP; an audited scrypt implementation protects browser-held private keys
+- **Local development:** Firebase Emulator Suite
 
-## React Compiler
+The encryption boundary is the browser: files are split into 4 MB blocks, AES-GCM encrypts each block with a random nonce and authenticated block metadata, and Firebase receives only encrypted blocks and manifests.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Phase 1 status
 
-## Expanding the Oxlint configuration
+This implementation includes the production UI shell:
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- Responsive dashboard, sidebar, top navigation, file views, search, view toggles, starring, and upload dialog
+- Login and registration screens
+- Dashboard statistics and storage visualization
+- Shared, recent, starred, trash, activity, and settings routes
+- Firebase, Firestore, Storage, and emulator configuration placeholders
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+Firebase authentication and cryptography are implemented in later phases rather than presented as simulated production behavior.
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+2. Create a Firebase project and enable Email/password authentication, Cloud Firestore, and Cloud Storage.
+
+3. Copy the environment template:
+
+```bash
+copy .env.example .env
+```
+
+4. Add the Firebase web configuration values from Firebase Console to `.env`. Never put service-account credentials in frontend source or environment files shipped to the browser.
+
+5. Start the app:
+
+```bash
+npm run dev
+```
+
+For emulator development:
+
+```bash
+firebase emulators:start
+```
+
+Set `VITE_USE_FIREBASE_EMULATORS=true` when emulator integration is enabled.
+
+## Validation
+
+```bash
+npm run build
+npm run lint
+```
