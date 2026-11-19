@@ -411,12 +411,14 @@ function SecureFilesPage({ shared = false, starred = false, recent = false, titl
 
 function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate()
-  const { createUserProfile, unlockKeys } = useAuth()
+  const { createUserProfile, loading, unlockKeys, user } = useAuth()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  if (loading) return <div className="grid min-h-screen place-items-center bg-[#090d18] text-sm text-[#8d96aa]">Loading SecureCloud...</div>
+  if (user) return <Navigate to="/dashboard" replace />
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy(true)

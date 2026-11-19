@@ -52,9 +52,9 @@ if errorlevel 1 (
   echo SecureCloud web app is already running.
 )
 
-start "" "http://127.0.0.1:5173/"
+start "" "http://127.0.0.1:5173/dashboard"
 echo.
-echo SecureCloud is ready at http://127.0.0.1:5173/
+echo SecureCloud is ready at http://127.0.0.1:5173/dashboard
 echo Firebase Emulator UI: http://127.0.0.1:4000/
 exit /b 0
 
