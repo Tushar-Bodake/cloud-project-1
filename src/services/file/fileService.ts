@@ -1,7 +1,7 @@
-import { deleteDoc, doc, getDoc, getDocs, collection, query, where, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, getDocs, collection, query, where, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { getBytes, ref, uploadBytes } from 'firebase/storage'
 import { auth, db, storage } from '../firebase/firebase'
-import { BLOCK_SIZE, encryptBlock, sha256Hex, wrapDek, unwrapDek, decryptBlock, publicKeyFromBase64 } from '../encryption/crypto'
+import { BLOCK_SIZE, encryptBlock, sha256Hex, wrapDek, unwrapDek, decryptBlock } from '../encryption/crypto'
 
 export type SecureFileManifest = {
   fileId: string
@@ -133,14 +133,14 @@ export async function downloadEncryptedFile(file: SecureFileRecord, privateKey: 
   const access = await getDoc(doc(db, 'fileAccess', `${user.uid}_${file.fileId}`))
   if (!access.exists() || access.data().status !== 'active') throw new Error('You do not have active access to this file')
 
-  const manifestBytes = await getBytes(ref(storage, file.manifestPath))
+  const manifestBytes = new Uint8Array(await getBytes(ref(storage, file.manifestPath)))
   const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as SecureFileManifest
   if (manifest.fileId !== file.fileId || manifest.blockCount !== manifest.blocks.length) throw new Error('Manifest integrity validation failed')
 
   const dek = await unwrapDek(access.data().wrappedDEK, privateKey)
   const plaintextBlocks: Uint8Array[] = []
   for (const block of manifest.blocks) {
-    const encryptedBytes = await getBytes(ref(storage, storagePath(file.ownerId, file.fileId, block.blockNumber)))
+    const encryptedBytes = new Uint8Array(await getBytes(ref(storage, storagePath(file.ownerId, file.fileId, block.blockNumber))))
     const actualHash = await sha256Hex(encryptedBytes)
     if (actualHash !== block.encryptedHash) throw new Error(`Integrity verification failed for block ${block.blockNumber}`)
     if (encryptedBytes.length !== block.encryptedSize) throw new Error(`Block ${block.blockNumber} has an invalid size`)

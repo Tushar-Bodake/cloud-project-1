@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../services/firebase/firebase'
-import { decryptPrivateKey, encryptPrivateKey, generateRsaKeyPair, publicKeyToPem, privateKeyToPem } from '../services/encryption/crypto'
+import { decryptPrivateKey, encryptPrivateKey, generateRsaKeyPair, publicKeyToPem } from '../services/encryption/crypto'
 
 export type KeyMaterial = CryptoKeyPair
 
